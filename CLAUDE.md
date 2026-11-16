@@ -44,6 +44,24 @@ Käyttöliittymä on suomeksi.
 - **Ehdotetut paikat 1–9** on arvioitu käyttäjän kahdesta MML-pohjaisen karttasovelluksen kuvakaappauksesta (syvyyspisteet ja -käyrät). Niillä ei ole koordinaatteja, siksi käyttäjä sijoittaa ne itse oikean syvyysaineiston päälle.
 - **Ulkoasu.** Barlow + Barlow Condensed, syvyyssiniset sävyt, teal-korostus, vaalea ja tumma teema CSS-muuttujina. Lajivärit CSS-muuttujissa (`--kuha`, `--ahven`, `--hauki`, `--kirjolohi`, `--molemmat`, `--muu`).
 
+## Ottipaikat (lisätty 16.11.2026)
+
+Käyttäjän määrittely: kartan "Lisää ottipaikat" -nappi avaa lajivalikon; valittujen lajien parhaat paikat lasketaan *nykyiselle karttanäkymälle*. Lajit erivärisillä pallukoilla; jokaisella oma numero, joka näkyy vasta lähelle zoomattaessa. Numerointi aina ylhäältä alas ja vasemmalta oikealle (yhteinen kaikille lajeille). Paikat-välilehti listaa ja kuvaa jokaisen pallukan; napautus kartalla näyttää saman kuvauksen. Omien paikkojen lisäys siirtyi Paikat-välilehden "Lisää oma paikka" -napiksi.
+
+Toteutus (`js/hotspots.js`): näkymä jaetaan soluihin (15–150 m), vesi-, virta- (vesitasot, joiden nimessä "joki") ja syvyysalueet rasteroidaan piilotetulle canvasille, luotauspisteet keskiarvotetaan soluihin. Syvyys: luotaukset > lähimmät luotaukset (~40 m) > syvyysalueen keskikohta. Tunnusluvut: jyrkkyys (m/100 m), matalikko (ympäröivä rengas ~120 m syvempi), syvänne ~150 m säteellä, etäisyys rantaan, virta. Tavoitesyvyys lajeittain veden lämpötilan ja kuukauden mukaan (`seasonDepth`). Pelkkä sopiva syvyys antaa enintään 0,35 → paikalla on oltava rakenne; kynnys 0,45. Enintään 8 paikkaa/laji, väli vähintään max(120 m, näkymä/9). Tallennetaan localStorageen (`hot`, `hotPick`). Veden lämpötila = nykyhetken arvio (`waterTemp`).
+
+Rajoitukset: ei tietoa pohjan laadusta, kasvillisuudesta eikä virran voimakkuudesta; kirjolohi = virta-alueet (Mankalaa ei tunnisteta erikseen).
+
+## MML:n taustakartta (lisätty 16.11.2026)
+
+Avoin WMTS: `https://avoin-karttakuva.maanmittauslaitos.fi/avoin/wmts/1.0.0/{taso}/default/ETRS-TM35FIN/{z}/{rivi}/{sarake}.png?api-key=…` (ortokuva .jpg). Tasot: maastokartta, taustakartta, selkokartta, ortokuva. ETRS-TM35FIN: vasen yläkulma (-548576, 8388608), 256 px, taso z = 2^(13−z) m/px, avoimessa palvelussa tasot 0–13. Sama koordinaatisto kuin sovelluksella, joten muunnosta ei tarvita.
+- API-avain on käyttäjän päätöksellä (16.11.2026) koodissa: `js/config.js` (`MML_KEY`), julkisesti nähtävissä. Aineisto-välilehdellä voi asettaa laitekohtaisen oman avaimen (localStorage `mmlKey`), tyhjä palauttaa oletusavaimen. Avaimen hankinta: omatili.maanmittauslaitos.fi → avoimet rajapintapalvelut → luo API-avain.
+- MML kuvaa avoimen rajapinnan testaukseen ja pienimuotoiseen käyttöön (ruuhkassa 503, ei takuuta). Jos käyttäjiä tulee paljon, harkitse sopimuspohjaista palvelua tai käyttäjäkohtaisia avaimia.
+- Taustan valinta Tasot-valikossa (`bg`). Kun tiiliä näkyy, omat vesialueet jätetään piirtämättä ja syvyysalueet piirretään läpikuultavina. Jos tiilet eivät lataudu, piirto palaa entiseen.
+- Tiilet ladataan `crossOrigin=anonymous` (MML palauttaa CORS-otsakkeet ainakin 401-vastauksessa); virheessä yritetään kerran ilman CORSia. Väärä avain → 403 ilman CORS-otsakkeita.
+- Service worker tallentaa tiilet erilliseen välimuistiin `kalakartta-tiilet` (välimuisti ensin, max 6000 tiiltä), joten katsotut alueet toimivat ilman verkkoa.
+- Testattu oikealla avaimella 16.11.2026: tiilet latautuvat CORS-tilassa ilman virheitä ja osuvat Syken syvyysalueiden ja rantaviivojen kanssa yksiin. Service workerin tiilivälimuistia ei ole testattu (SW ei rekisteröidy Clauden selaimessa).
+
 ## Tekninen rakenne
 
 ```
@@ -51,6 +69,7 @@ index.html            runko: kartta + alapaneeli (Ennuste, Paikat, Saaliit, Aine
 css/app.css           ulkoasu, teemat
 js/app.js             kartta (canvas, pan/pinch/zoom, Path2D-välimuisti), UI, saaliit, aineiston tuonti, GPS, käynnistys
 js/model.js           scoreHour(laji, t, ctx), whereToGo, waterTemp, climWater, WEIGHTS
+js/hotspots.js        ottipaikat: findHotspots (rasteroi näkymän syvyysaineiston, pisteyttää lajeittain), seasonDepth
 js/astro.js           auringon ja kuun korkeus, nousu/lasku, kulminaatiot, kuun vaihe, solunaarijaksot
 js/weather.js         getWeather (Open-Meteo + välimuisti), hourAt
 js/shp.js             shapefile- ja dbf-lukija, bbox-rajaus, yksinkertaistus (CORE.processShapefile)
@@ -96,7 +115,7 @@ Ei testattu: GitHub Pages -julkaisu, service worker (rekisteröinti epäonnistui
 
 1. ~~Syken aineiston rajaus~~ tehty 16.11.2026.
 2. ~~Paikallinen testi~~ tehty 16.11.2026 (`tools/palvelin.ps1`).
-3. Valitse lisenssi, vie GitHubiin selaimella, ota GitHub Pages käyttöön (main, juuri). Nosta `sw.js`:n `VERSION` aina kun tiedostot muuttuvat (nyt v3).
+3. Valitse lisenssi, vie GitHubiin selaimella, ota GitHub Pages käyttöön (main, juuri). Nosta `sw.js`:n `VERSION` aina kun tiedostot muuttuvat (nyt v6).
 4. Käyttäjä asentaa sovelluksen puhelimeen, sijoittaa ehdotetut paikat ja syöttää Mankalan viimeisimmän istutuspäivän.
 5. Suunnitellut parannukset tärkeysjärjestyksessä:
    - paikkojen ja saaliiden vienti ja tuonti JSON-tiedostona (varmuuskopio ja laitteiden välinen siirto)

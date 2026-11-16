@@ -3,6 +3,8 @@
 Puhelimeen asennettava verkkosovellus (PWA) kuhan, ahvenen, hauen ja kirjolohen kalastukseen Iitin Pyhäjärvellä, Pelinginselällä ja Kymijoen vesillä Jaalaan asti, Mankalan voimalaitoksen kirjolohivedet mukaan lukien.
 
 - **Syvyyskartta** Syken avoimesta syvyysaineistosta: syvyysalueet, -käyrät ja luotauspisteet. Napauta karttaa nähdäksesi syvyyden.
+- **Ottipaikat**: *Lisää ottipaikat* -napilla sovellus laskee näkyvältä kartta-alueelta valittujen lajien parhaat kohdat syvyysaineiston (pudotusreunat, matalikot, syvänteet, virta) ja vuodenajan perusteella. Pallukat numeroidaan ylhäältä alas ja vasemmalta oikealle, ja jokaisen perustelu näkyy napauttamalla tai Paikat-välilehdellä.
+- **Taustakartta**: Maanmittauslaitoksen maastokartta, taustakartta, selkokartta tai ilmakuva (API-avain on tiedostossa `js/config.js`; laitekohtaisen oman avaimen voi asettaa Aineisto-välilehdellä).
 - **Kalapaikat**: omat paikat ja kymmenen valmista ehdotusta (myös Mankalan voimalaitoksen edusta), jotka sijoitetaan kartalle.
 - **Ennuste**: tuntikohtainen kalaonni-arvio (0–100) kuhalle, ahvenelle, hauelle ja kirjolohelle kymmeneksi päiväksi, sekä viikon parhaat ajat.
 - **Saaliskirja**: jokaiseen saaliiseen tallentuu sää, paine ja mallin arvio, ja kirjaukset saa CSV-tiedostona.
@@ -85,6 +87,7 @@ index.html             sovelluksen runko
 css/app.css            ulkoasu (vaalea ja tumma teema)
 js/app.js              kartta, välilehdet ja käyttöliittymä
 js/model.js            kalaonni-malli
+js/hotspots.js         ottipaikkojen laskenta syvyysaineistosta
 js/astro.js            auringon ja kuun laskenta (kalakalenteri)
 js/weather.js          sää Open-Meteosta, välimuistilla
 js/shp.js, js/proj.js  shapefile-luku ja ETRS-TM35FIN-muunnos
@@ -97,6 +100,7 @@ data/                  rajattu syvyysaineisto
 ## Lähteet ja lisenssit
 
 - Syvyysaineisto: Suomen ympäristökeskus (Syke), CC BY 4.0.
+- Taustakartat: Maanmittauslaitos, avoin rajapinta, CC BY 4.0.
 - Sää: [Open-Meteo.com](https://open-meteo.com/), CC BY 4.0. Ilmainen ei-kaupalliseen käyttöön ilman API-avainta.
 - Zip-purku: [fflate](https://github.com/101arrowz/fflate), MIT.
 - Auringon ja kuun kaavat noudattavat SunCalc-kirjaston (BSD-2) julkaistuja menetelmiä.

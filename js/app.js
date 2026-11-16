@@ -3,7 +3,9 @@ import { CORE } from "./shp.js";
 import { LS, IDB } from "./store.js";
 import { getWeather, hourAt } from "./weather.js";
 import { dayEvents, solunarPeriods, phaseName } from "./astro.js";
-import { scoreHour, whereToGo, SPECIES as FC_SPECIES } from "./model.js";
+import { scoreHour, whereToGo, waterTemp, SPECIES as FC_SPECIES } from "./model.js";
+import { findHotspots, HOT_SPECIES } from "./hotspots.js";
+import { MML_KEY } from "./config.js";
 
 /* ---------- asetukset ---------- */
 const ORIGIN = [453000, 6742500];                   // karttakoordinaatiston nollapiste (ETRS-TM35FIN)
@@ -39,7 +41,8 @@ const newId = p => (p || "s") + Date.now().toString(36) + Math.random().toString
 
 /* ---------- tila ---------- */
 const S = {
-  layers: new Map(), spots: [], catches: [], vis: { vesi: true, alueet: true, kayrat: true, pisteet: true, paikat: true, saaliit: true },
+  layers: new Map(), spots: [], catches: [], vis: { vesi: true, alueet: true, kayrat: true, pisteet: true, ottipaikat: true, paikat: true, saaliit: true },
+  hot: null, hotSel: null, hotPick: ["kuha", "ahven"], bg: "", mmlKey: "",
   view: null, mode: null, placing: null, sel: null, gps: null, gpsWatch: null, region: REGION_DEFAULT.slice(), pending: [], maxDepth: 12,
   weather: null, manualWater: null, fc: { sp: "kuha", day: midnight(Date.now()), hour: new Date().getHours() }
 };
@@ -77,23 +80,64 @@ function prepLayer(meta, data) {
 }
 function recalcDepth() { let mx = 0; for (const L of S.layers.values()) if (L.meta.kind !== "vesi") for (const f of L.feats) { const v = Math.max(f.d ?? 0, f.d2 ?? 0); if (v > mx && v < 200) mx = v; } S.maxDepth = mx > 0 ? Math.max(4, Math.ceil(mx)) : 12; buildLegend(); }
 
+/* ---------- MML:n taustakartta (avoin WMTS, ETRS-TM35FIN) ---------- */
+const MML = { x0: -548576, y0: 8388608, url: "https://avoin-karttakuva.maanmittauslaitos.fi/avoin/wmts/1.0.0/" };
+const tiles = new Map(); let tileErr = false, tileGood = false;
+const bgOn = () => !!(S.bg && S.mmlKey);
+function tileAt(layer, z, r, c) {
+  const k = `${layer}/${z}/${r}/${c}`; let t = tiles.get(k);
+  if (t) { tiles.delete(k); tiles.set(k, t); return t; }   // viimeksi käytetty loppuun
+  const img = new Image(); t = { img, ok: false, bad: false };
+  img.crossOrigin = "anonymous";
+  img.onload = () => { t.ok = true; tileErr = false; tileGood = true; req(); };
+  img.onerror = () => {
+    // varmuuden vuoksi uusi yritys ilman CORS-tilaa (kuva näkyy, mutta ei tallennu offline-välimuistiin)
+    if (img.crossOrigin && navigator.onLine !== false) { img.removeAttribute("crossorigin"); img.src = img.src; return; }
+    t.bad = true; if (!tileErr) { tileErr = true; flash(navigator.onLine === false ? "Ei verkkoyhteyttä: taustakarttaa näkyy vain aiemmin katsotuilta alueilta." : "Taustakarttaa ei saatu ladattua. Tarkista API-avain Aineisto-välilehdeltä."); } };
+  img.src = `${MML.url}${layer}/default/ETRS-TM35FIN/${z}/${r}/${c}.${layer === "ortokuva" ? "jpg" : "png"}?api-key=${encodeURIComponent(S.mmlKey)}`;
+  tiles.set(k, t);
+  if (tiles.size > 500) for (const kk of tiles.keys()) { if (tiles.size <= 400) break; tiles.delete(kk); }
+  return t;
+}
+function drawTiles() {
+  const layer = S.bg, z = Math.max(0, Math.min(13, Math.round(13 + Math.log2(S.view.s))));
+  const span = 256 * Math.pow(2, 13 - z);
+  const [a, b] = toW(0, H), [c, d] = toW(W, 0);
+  const c0 = Math.floor((a + ORIGIN[0] - MML.x0) / span), c1 = Math.floor((c + ORIGIN[0] - MML.x0) / span);
+  const r0 = Math.floor((MML.y0 - d - ORIGIN[1]) / span), r1 = Math.floor((MML.y0 - b - ORIGIN[1]) / span);
+  if ((c1 - c0 + 1) * (r1 - r0 + 1) > 150) return;
+  const sz = span * S.view.s + .6;
+  for (let r = r0; r <= r1; r++) for (let col = c0; col <= c1; col++) {
+    const [X, Y] = toScr(MML.x0 + col * span - ORIGIN[0], MML.y0 - r * span - ORIGIN[1]);
+    const t = tileAt(layer, z, r, col);
+    if (t.ok) { ctx.drawImage(t.img, X, Y, sz, sz); continue; }
+    for (let up = 1; up <= 5 && z - up >= 0; up++) {   // väliaikaisesti karkeampi taso
+      const f = 1 << up, pr = Math.floor(r / f), pc = Math.floor(col / f), pt = tiles.get(`${layer}/${z - up}/${pr}/${pc}`);
+      if (pt && pt.ok) { const sub = 256 / f; ctx.drawImage(pt.img, (col - pc * f) * sub, (r - pr * f) * sub, sub, sub, X, Y, sz, sz); break; }
+    }
+  }
+}
+
 function draw() {
   if (!S.view) return;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = css("--land"); ctx.fillRect(0, 0, W, H);
+  if (bgOn()) drawTiles();
+  const bg = bgOn() && tileGood; $("attr").hidden = !bg;   // jos tiiliä ei saada, piirretään omat vesialueet kuten ennenkin
   const s = S.view.s, vb = [S.view.cx - W / 2 / s, S.view.cy - H / 2 / s, S.view.cx + W / 2 / s, S.view.cy + H / 2 / s];
   const vis = b => !(b[2] < vb[0] || b[0] > vb[2] || b[3] < vb[1] || b[1] > vb[3]);
   ctx.setTransform(DPR * s, 0, 0, -DPR * s, DPR * (W / 2 - S.view.cx * s), DPR * (H / 2 + S.view.cy * s));
   const by = k => [...S.layers.values()].filter(L => L.meta.kind === k);
   const hasWater = by("vesi").length > 0;
-  if (S.vis.vesi) for (const L of by("vesi")) { ctx.fillStyle = css("--w0"); for (const f of L.feats) if (f.path && f.t === "A" && vis(f.b)) ctx.fill(f.path, "evenodd"); ctx.strokeStyle = css("--shore"); ctx.lineWidth = 1.2 / s; for (const f of L.feats) if (f.path && vis(f.b)) ctx.stroke(f.path); }
-  if (S.vis.alueet) for (const L of by("alueet")) for (const f of L.feats) if (f.path && f.t === "A" && vis(f.b)) { ctx.fillStyle = depthColor(f.d ?? 0); ctx.fill(f.path, "evenodd"); }
-  if (S.vis.alueet && !hasWater) for (const L of by("alueet")) { ctx.strokeStyle = css("--shore"); ctx.lineWidth = .6 / s; for (const f of L.feats) if (f.path && f.t === "A" && vis(f.b) && (f.d ?? 0) <= .01) ctx.stroke(f.path); }
+  if (S.vis.vesi && !bg) for (const L of by("vesi")) { ctx.fillStyle = css("--w0"); for (const f of L.feats) if (f.path && f.t === "A" && vis(f.b)) ctx.fill(f.path, "evenodd"); ctx.strokeStyle = css("--shore"); ctx.lineWidth = 1.2 / s; for (const f of L.feats) if (f.path && vis(f.b)) ctx.stroke(f.path); }
+  if (S.vis.alueet) { ctx.globalAlpha = bg ? (S.bg === "ortokuva" ? .55 : .75) : 1; for (const L of by("alueet")) for (const f of L.feats) if (f.path && f.t === "A" && vis(f.b)) { ctx.fillStyle = depthColor(f.d ?? 0); ctx.fill(f.path, "evenodd"); } ctx.globalAlpha = 1; }
+  if (S.vis.alueet && !hasWater && !bg) for (const L of by("alueet")) { ctx.strokeStyle = css("--shore"); ctx.lineWidth = .6 / s; for (const f of L.feats) if (f.path && f.t === "A" && vis(f.b) && (f.d ?? 0) <= .01) ctx.stroke(f.path); }
   const labels = [];
   if (S.vis.kayrat) for (const L of by("kayrat")) { ctx.strokeStyle = css("--contour"); ctx.lineWidth = 1 / s; for (const f of L.feats) if (f.path && vis(f.b)) { ctx.globalAlpha = .85; ctx.stroke(f.path); ctx.globalAlpha = 1; if (f.d != null && s > .04) { const r = f.rings[0], m = (r.length >> 2) << 1; labels.push([r[m], r[m + 1], fmt(f.d)]); } } }
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   if (labels.length) { const used = new Set(), g = 70; ctx.font = "600 13px " + css("--fc"); ctx.textAlign = "center"; ctx.textBaseline = "middle"; for (const [x, y, t] of labels) { const [X, Y] = toScr(x, y); if (X < 0 || Y < 0 || X > W || Y > H) continue; const k = Math.floor(X / g) + ":" + Math.floor(Y / g); if (used.has(k)) continue; used.add(k); const w = ctx.measureText(t).width + 6; ctx.fillStyle = css("--panel"); ctx.globalAlpha = .85; ctx.fillRect(X - w / 2, Y - 8, w, 16); ctx.globalAlpha = 1; ctx.fillStyle = css("--contour"); ctx.fillText(t, X, Y); } }
   if (S.vis.pisteet && s > .08) { ctx.font = "500 12px " + css("--fc"); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = css("--contour"); let n = 0; const used = new Set(), g = s > .4 ? 22 : 34; for (const L of by("pisteet")) for (const f of L.feats) { if (n > 900) break; const r = f.rings[0]; const [X, Y] = toScr(r[0], r[1]); if (X < 0 || Y < 0 || X > W || Y > H) continue; const k = Math.floor(X / g) + ":" + Math.floor(Y / g); if (used.has(k)) continue; used.add(k); n++; ctx.fillText(f.d != null ? fmt(f.d) : "·", X, Y); } }
   if (S.vis.saaliit) for (const c of S.catches) { if (c.E == null) continue; const [x, y] = W2(c.E, c.N); const [X, Y] = toScr(x, y); if (X < -20 || Y < -20 || X > W + 20 || Y > H + 20) continue; ctx.save(); ctx.translate(X, Y); ctx.rotate(Math.PI / 4); ctx.fillStyle = "#fff"; ctx.fillRect(-7, -7, 14, 14); ctx.fillStyle = spColor(c.sp); ctx.fillRect(-5, -5, 10, 10); ctx.restore(); }
+  if (S.vis.ottipaikat && S.hot) drawHot();
   if (S.vis.paikat) for (const sp of S.spots) { const [x, y] = W2(sp.E, sp.N); const [X, Y] = toScr(x, y); if (X < -30 || Y < -30 || X > W + 30 || Y > H + 30) continue; const sel = S.sel === sp.id, r = sel ? 17 : 14; ctx.beginPath(); ctx.arc(X, Y, r + 3, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.beginPath(); ctx.arc(X, Y, r, 0, 7); ctx.fillStyle = spColor(sp.sp); ctx.fill(); ctx.fillStyle = "#fff"; ctx.font = "600 " + (sel ? 17 : 15) + "px " + css("--fc"); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(sp.n ?? ""), X, Y + 1); }
   if (S.gps) { const [x, y] = W2(S.gps.E, S.gps.N); const [X, Y] = toScr(x, y); const ar = Math.max(8, S.gps.acc * s); ctx.beginPath(); ctx.arc(X, Y, ar, 0, 7); ctx.fillStyle = css("--gps"); ctx.globalAlpha = .15; ctx.fill(); ctx.globalAlpha = 1; ctx.beginPath(); ctx.arc(X, Y, 8, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.beginPath(); ctx.arc(X, Y, 6, 0, 7); ctx.fillStyle = css("--gps"); ctx.fill(); }
   const target = 110 / s, p = Math.pow(10, Math.floor(Math.log10(target))); let m = p; for (const k of [1, 2, 5, 10]) if (k * p <= target) m = k * p; $("scaleBar").style.width = Math.round(m * s) + "px"; $("scaleTxt").textContent = m >= 1000 ? fmt(m / 1000) + " km" : m + " m";
@@ -117,6 +161,8 @@ function onTap(X, Y) {
   const [x, y] = toW(X, Y);
   if (S.mode === "place") { placeSpot(x + ORIGIN[0], y + ORIGIN[1]); return; }
   if (S.vis.paikat) { let best = null, bd = 24; for (const sp of S.spots) { const [a, b] = toScr(...W2(sp.E, sp.N)); const d = Math.hypot(a - X, b - Y); if (d < bd) { bd = d; best = sp; } } if (best) { selectSpot(best.id, false); return; } }
+  if (S.vis.ottipaikat && S.hot) { let best = null, bd = 22; for (const h of S.hot.spots) { const [a, b] = toScr(...W2(h.E, h.N)); const d = Math.hypot(a - X, b - Y); if (d < bd) { bd = d; best = h; } } if (best) { selectHot(best.n, false); return; } }
+  if (S.hotSel != null) { S.hotSel = null; renderHot(); req(); }
   readDepth(x, y);
 }
 function depthAt(x, y) {
@@ -131,7 +177,59 @@ function readDepth(x, y) {
   if (!html) html = S.layers.size ? "<small>Ei syvyystietoa tässä kohdassa.</small>" : "<small>Lisää syvyysaineisto nähdäksesi syvyydet.</small>";
   flash(html, true);
 }
-function flash(t, isHtml) { const R = $("readout"); if (isHtml) R.innerHTML = t; else R.textContent = t; R.hidden = false; clearTimeout(R._t); R._t = setTimeout(() => R.hidden = true, 6000); }
+function flash(t, isHtml, ms) { const R = $("readout"); if (isHtml) R.innerHTML = t; else R.textContent = t; R.hidden = false; clearTimeout(R._t); R._t = setTimeout(() => R.hidden = true, ms || 6000); }
+
+/* ---------- ottipaikat ---------- */
+function viewBox() { const [a, b] = toW(0, H), [c, d] = toW(W, 0); return [a, b, c, d]; }
+function computeHot() {
+  const pick = [...document.querySelectorAll("#hotPop input[data-hs]")].filter(c => c.checked).map(c => c.dataset.hs);
+  S.hotPick = pick; LS.set("hotPick", pick);
+  if (!pick.length) { flash("Valitse vähintään yksi laji."); return; }
+  if (!S.layers.size) { flash("Syvyysaineisto puuttuu, joten ottipaikkoja ei voi laskea."); return; }
+  const t = Date.now(), wt = waterTemp(t, S.weather, S.manualWater).v;
+  const r = findHotspots({ layers: S.layers.values(), box: viewBox(), species: pick, wt, month: new Date(t).getMonth() + 1 });
+  if (!r.hasDepth) { flash("Tässä näkymässä ei ole syvyysaineistoa. Siirry vesialueen kohdalle."); return; }
+  // numerointi lukujärjestyksessä: ylhäältä alas riveittäin, rivin sisällä vasemmalta oikealle
+  const arr = r.spots.slice().sort((a, b) => b.y - a.y), band = r.spacing * .5, rows = [];
+  for (const h of arr) { const row = rows[rows.length - 1]; if (row && row.y0 - h.y <= band) row.items.push(h); else rows.push({ y0: h.y, items: [h] }); }
+  const out = []; for (const row of rows) for (const h of row.items.sort((a, b) => a.x - b.x)) out.push(h);
+  S.hot = { t, wt: Math.round(wt * 10) / 10, spacing: r.spacing, species: pick, notes: r.notes,
+    spots: out.map((h, i) => ({ n: i + 1, sp: h.sp, E: Math.round(h.x + ORIGIN[0]), N: Math.round(h.y + ORIGIN[1]), score: h.score, title: h.title, desc: h.desc })) };
+  S.hotSel = null; LS.set("hot", S.hot); renderHot(); req();
+  const per = pick.map(sp => `${HOT_SPECIES[sp].toLowerCase()} ${S.hot.spots.filter(h => h.sp === sp).length}`).join(", ");
+  flash(S.hot.spots.length ? `Ottipaikkoja ${S.hot.spots.length} (${per}). Numerot näkyvät, kun zoomaat lähemmäs. Napauta pallukkaa nähdäksesi kuvauksen.` : "Näkymästä ei löytynyt sopivia ottipaikkoja. " + r.notes.join(" "), false, 8000);
+}
+function drawHot() {
+  const showNum = S.view.s * S.hot.spacing >= 34;
+  for (const h of S.hot.spots) {
+    const [X, Y] = toScr(...W2(h.E, h.N)); if (X < -20 || Y < -20 || X > W + 20 || Y > H + 20) continue;
+    const sel = S.hotSel === h.n, r = showNum ? (sel ? 14 : 11) : (sel ? 9 : 6);
+    ctx.beginPath(); ctx.arc(X, Y, r + 2, 0, 7); ctx.fillStyle = sel ? css("--ink") : "#fff"; ctx.fill();
+    ctx.beginPath(); ctx.arc(X, Y, r, 0, 7); ctx.fillStyle = spColor(h.sp); ctx.fill();
+    if (showNum) { ctx.fillStyle = "#fff"; ctx.font = "600 " + (h.n >= 100 ? 11 : 13) + "px " + css("--fc"); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(h.n), X, Y + 1); }
+  }
+}
+function hotHtml(h) { return `<strong>${h.n}. ${esc(HOT_SPECIES[h.sp])}: ${esc(h.title)}</strong>` + h.desc.map(d => `<span>${esc(d)}</span>`).join(""); }
+function selectHot(n, fly) {
+  const h = S.hot?.spots.find(x => x.n === n); if (!h) return; S.hotSel = n;
+  if (fly) { [S.view.cx, S.view.cy] = W2(h.E, h.N); S.view.s = Math.max(S.view.s, 40 / S.hot.spacing); saveView(); }
+  flash(`<div class="hotro">${hotHtml(h)}</div>`, true, 15000); renderHot(); req();
+}
+function renderHot() {
+  const L = $("hotList"); L.innerHTML = "";
+  if (!S.hot || !S.hot.spots.length) { $("hotMeta").innerHTML = S.hot ? "Viimeisimmästä näkymästä ei löytynyt sopivia ottipaikkoja. " + esc((S.hot.notes || []).join(" ")) : "Paina kartalla <b>Lisää ottipaikat</b> ja valitse lajit. Paikat numeroidaan ylhäältä alas ja vasemmalta oikealle."; return; }
+  const d = new Date(S.hot.t);
+  $("hotMeta").textContent = `Laskettu ${d.getDate()}.${d.getMonth() + 1}. klo ${hm(S.hot.t)}, veden lämpötila ${fmt(S.hot.wt)} °C. Numerointi ylhäältä alas ja vasemmalta oikealle.` + (S.hot.notes?.length ? " " + S.hot.notes.join(" ") : "");
+  for (const h of S.hot.spots) {
+    const li = document.createElement("li"); if (h.n === S.hotSel) li.className = "sel"; li.id = "hot-" + h.n;
+    li.innerHTML = `<span class="dot sm" style="background:${spColor(h.sp)}">${h.n}</span><div class="li-main">${hotHtml(h)}<div class="row" style="margin-top:6px"><button class="btn" data-a="show">Näytä</button><button class="btn" data-a="save">Tallenna omaksi</button></div></div>`;
+    li.querySelector("[data-a=show]").onclick = () => { selectHot(h.n, true); if (innerWidth < 900) setSheet(false); };
+    li.querySelector("[data-a=save]").onclick = async () => { const n = Math.max(SUGGESTIONS.length, ...S.spots.map(s => s.n || 0)) + 1; await saveSpot({ id: newId(), n, name: `${HOT_SPECIES[h.sp]}: ${h.title.toLowerCase()}`, sp: h.sp, note: h.desc.join(" "), E: h.E, N: h.N, t: Date.now() }); flash(`Tallennettu omaksi paikaksi ${n}.`); };
+    L.appendChild(li);
+  }
+  if (S.hotSel != null) $("hot-" + S.hotSel)?.scrollIntoView({ block: "nearest" });
+}
+function toggleHotPop(open) { const P = $("hotPop"); P.hidden = open === undefined ? !P.hidden : !open; $("hotBtn").setAttribute("aria-expanded", String(!P.hidden)); $("fabs").style.visibility = P.hidden ? "" : "hidden"; if (!P.hidden) { $("layerPop").hidden = true; $("layersBtn").setAttribute("aria-expanded", "false"); } }
 
 /* ---------- paikat ---------- */
 async function saveSpot(sp) { await IDB.put("spots", sp.id, sp); const i = S.spots.findIndex(s => s.id === sp.id); if (i >= 0) S.spots[i] = sp; else S.spots.push(sp); renderSpots(); req(); }
@@ -345,9 +443,15 @@ function setSheet(open) { $("sheet").classList.toggle("min", !open); $("sheetTog
 document.querySelectorAll(".tab").forEach(t => t.onclick = () => { showTab(t.dataset.p); setSheet(true); });
 $("sheetToggle").onclick = () => setSheet($("sheet").classList.contains("min"));
 $("addBtn").onclick = () => S.mode ? endPlace() : startPlace(null);
+$("hotBtn").onclick = () => toggleHotPop();
+$("bgSel").onchange = e => { S.bg = e.target.value; LS.set("bg", S.bg); tileErr = false; if (S.bg && !S.mmlKey) { flash("Lisää ensin Maanmittauslaitoksen API-avain Aineisto-välilehdellä."); showTab("pAineisto"); setSheet(true); $("mmlKey").focus(); } req(); };
+$("mmlSave").onclick = () => { const own = $("mmlKey").value.trim(); LS.set("mmlKey", own); S.mmlKey = own || MML_KEY; tiles.clear(); tileErr = false; tileGood = false; flash(own ? "Oma API-avain tallennettu tälle laitteelle." : "Käytetään sovelluksen omaa API-avainta."); req(); };
+$("hotClose").onclick = () => toggleHotPop(false);
+$("hotGo").onclick = () => { toggleHotPop(false); computeHot(); };
+$("hotClear").onclick = () => { S.hot = null; S.hotSel = null; LS.set("hot", null); renderHot(); req(); toggleHotPop(false); };
 $("placeCancel").onclick = endPlace;
 $("locBtn").onclick = toggleGps;
-$("layersBtn").onclick = () => { const P = $("layerPop"); P.hidden = !P.hidden; $("layersBtn").setAttribute("aria-expanded", String(!P.hidden)); $("fabs").style.visibility = P.hidden ? "" : "hidden"; };
+$("layersBtn").onclick = () => { if (!$("hotPop").hidden) toggleHotPop(false); const P = $("layerPop"); P.hidden = !P.hidden; $("layersBtn").setAttribute("aria-expanded", String(!P.hidden)); $("fabs").style.visibility = P.hidden ? "" : "hidden"; };
 $("layerClose").onclick = () => $("layersBtn").click();
 $("fitBtn").onclick = () => { fitAll(); $("layersBtn").click(); };
 document.querySelectorAll("#layerPop input[data-k]").forEach(c => c.onchange = () => { S.vis[c.dataset.k] = c.checked; LS.set("vis", S.vis); req(); });
@@ -372,6 +476,10 @@ addEventListener("resize", resize);
   S.region = LS.get("region", REGION_DEFAULT.slice()); S.vis = { ...S.vis, ...LS.get("vis", {}) }; S.manualWater = LS.get("water", null); S.stocking = LS.get("stocking", null);
   if (S.stocking) { const d = new Date(S.stocking); $("stockIn").value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
   document.querySelectorAll("#layerPop input[data-k]").forEach(c => c.checked = S.vis[c.dataset.k]);
+  S.bg = LS.get("bg", ""); const ownKey = LS.get("mmlKey", ""); S.mmlKey = ownKey || MML_KEY; $("bgSel").value = S.bg; $("mmlKey").value = ownKey;
+  S.hot = LS.get("hot", null); S.hotPick = LS.get("hotPick", S.hotPick);
+  document.querySelectorAll("#hotPop input[data-hs]").forEach(c => c.checked = S.hotPick.includes(c.dataset.hs));
+  renderHot();
   if (S.manualWater) $("wtIn").value = String(S.manualWater.v).replace(".", ",");
   $("bboxIn").value = S.region.join(", "); setNow();
   const v = LS.get("view", null); if (v && isFinite(v.s)) S.view = v;
