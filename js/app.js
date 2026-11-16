@@ -5,7 +5,7 @@ import { getWeather, hourAt } from "./weather.js";
 import { dayEvents, solunarPeriods, phaseName } from "./astro.js";
 import { scoreHour, whereToGo, waterTemp, SPECIES as FC_SPECIES } from "./model.js";
 import { findHotspots, HOT_SPECIES } from "./hotspots.js";
-import { MML_KEY } from "./config.js";
+import { MML_KEY, APP_VERSION } from "./config.js";
 
 /* ---------- asetukset ---------- */
 const ORIGIN = [453000, 6742500];                   // karttakoordinaatiston nollapiste (ETRS-TM35FIN)
@@ -491,5 +491,14 @@ addEventListener("resize", resize);
   for (const [id, rec] of await IDB.all("layers")) S.layers.set(id, prepLayer(rec.meta, rec.data));
   recalcDepth(); renderLayerList(); $("empty").hidden = S.layers.size > 0; if (!v && S.layers.size) fitAll(); req();
   loadWeather(false).then(renderCatches);
-  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => { });
+  $("appVer").textContent = "Versio " + APP_VERSION;
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    // Kun uusi versio otetaan käyttöön, sivu ladataan kerran uudelleen (ei ensiasennuksessa).
+    const hadCtrl = !!navigator.serviceWorker.controller; let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadCtrl && !reloaded) { reloaded = true; location.reload(); } });
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => {
+      reg.update().catch(() => { });
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => { }); });
+    }).catch(() => { });
+  }
 })();

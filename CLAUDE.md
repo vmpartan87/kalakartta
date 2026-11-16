@@ -115,7 +115,8 @@ Ei testattu: GitHub Pages -julkaisu, service worker (rekisteröinti epäonnistui
 
 1. ~~Syken aineiston rajaus~~ tehty 16.11.2026.
 2. ~~Paikallinen testi~~ tehty 16.11.2026 (`tools/palvelin.ps1`).
-3. Valitse lisenssi, vie GitHubiin selaimella, ota GitHub Pages käyttöön (main, juuri). Nosta `sw.js`:n `VERSION` aina kun tiedostot muuttuvat (nyt v6).
+3. Valitse lisenssi, vie GitHubiin selaimella, ota GitHub Pages käyttöön (main, juuri). Nosta `sw.js`:n `VERSION` ja `js/config.js`:n `APP_VERSION` aina kun tiedostot muuttuvat (nyt 7). Versio näkyy Aineisto-välilehden alareunassa.
+   - Päivityslogiikka (v7, 16.11.2026): omat tiedostot verkko ensin (4 s aikaraja → välimuisti), data/*.json ja ulkoiset kirjastot välimuisti ensin + taustapäivitys, MML-tiilet välimuisti ensin. Asennus hakee tiedostot `cache: "reload"` (ohittaa GitHub Pagesin 10 min HTTP-välimuistin). Sovellus ladataan kerran uudelleen, kun uusi service worker ottaa ohjauksen. Aiemmat versiot (≤ v6) olivat välimuisti ensin, joten niistä päivitettäessä tarvitaan yksi ylimääräinen avaus.
 4. Käyttäjä asentaa sovelluksen puhelimeen, sijoittaa ehdotetut paikat ja syöttää Mankalan viimeisimmän istutuspäivän.
 5. Suunnitellut parannukset tärkeysjärjestyksessä:
    - paikkojen ja saaliiden vienti ja tuonti JSON-tiedostona (varmuuskopio ja laitteiden välinen siirto)
