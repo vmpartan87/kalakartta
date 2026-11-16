@@ -1,0 +1,52 @@
+{
+    "layers":  [
+                   {
+                       "id":  "Syvyysalue",
+                       "file":  "Syvyysalue.json",
+                       "kind":  "alueet",
+                       "name":  "Syvyysalue",
+                       "depthField":  "syv_min",
+                       "depthField2":  "syv_max"
+                   },
+                   {
+                       "id":  "Syvyyskayra",
+                       "file":  "Syvyyskayra.json",
+                       "kind":  "kayrat",
+                       "name":  "Syvyyskayra",
+                       "depthField":  "syv_min",
+                       "depthField2":  null
+                   },
+                   {
+                       "id":  "Luotauspiste",
+                       "file":  "Luotauspiste.json",
+                       "kind":  "pisteet",
+                       "name":  "Luotauspiste",
+                       "depthField":  "Syvyys_m",
+                       "depthField2":  null
+                   },
+                   {
+                       "id":  "JokiAlue10",
+                       "file":  "JokiAlue10.json",
+                       "kind":  "vesi",
+                       "name":  "JokiAlue10",
+                       "depthField":  null,
+                       "depthField2":  null
+                   },
+                   {
+                       "id":  "JokiViiva10",
+                       "file":  "JokiViiva10.json",
+                       "kind":  "vesi",
+                       "name":  "JokiViiva10",
+                       "depthField":  null,
+                       "depthField2":  null
+                   },
+                   {
+                       "id":  "Jarvi10",
+                       "file":  "Jarvi10.json",
+                       "kind":  "vesi",
+                       "name":  "Jarvi10",
+                       "depthField":  null,
+                       "depthField2":  null
+                   }
+               ]
+}

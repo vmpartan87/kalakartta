@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B6E79">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Kalakartta – Iitin–Jaalan vedet</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/app.css">
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js" defer></script>
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Kalakartta</h1><span class="sub">Iitin–Jaalan vedet</span>
+    <span class="sp"></span>
+    <button class="chipbtn" id="layersBtn" aria-expanded="false">Tasot</button>
+  </header>
+  <div class="mapwrap" id="mapwrap">
+    <canvas id="map" aria-label="Syvyyskartta"></canvas>
+    <div id="readout" hidden></div>
+    <div id="placeHint" hidden><span id="placeText">Napauta kohtaa kartalla</span><button id="placeCancel">Peru</button></div>
+    <div class="fabs" id="fabs">
+      <button class="fab" id="locBtn" aria-pressed="false">Sijainti</button>
+      <button class="fab primary" id="addBtn">Lisää paikka</button>
+    </div>
+    <div class="layerpop" id="layerPop" hidden>
+      <h3>Näytä kartalla</h3>
+      <label><input type="checkbox" data-k="vesi" checked> Vesialueet ja rannat</label>
+      <label><input type="checkbox" data-k="alueet" checked> Syvyysalueet</label>
+      <label><input type="checkbox" data-k="kayrat" checked> Syvyyskäyrät</label>
+      <label><input type="checkbox" data-k="pisteet" checked> Luotauspisteet</label>
+      <label><input type="checkbox" data-k="paikat" checked> Kalapaikat</label>
+      <label><input type="checkbox" data-k="saaliit" checked> Saaliit</label>
+      <div class="legend" id="legendBar"></div>
+      <div class="lgnums" id="legendNums"></div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="fitBtn">Näytä koko aineisto</button><button class="btn" id="layerClose">Sulje</button></div>
+    </div>
+    <div id="empty" hidden><div>
+      <h2>Syvyysaineisto puuttuu vielä</h2>
+      <p>Lisää Syken syvyysaineisto repositorion data-kansioon tai lataa se tälle laitteelle Aineisto-välilehdeltä.</p>
+      <button class="btn primary" id="emptyGo">Avaa Aineisto</button>
+    </div></div>
+    <div id="scale"><span id="scaleTxt"></span><i id="scaleBar"></i></div>
+  </div>
+  <section class="sheet" id="sheet">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" aria-selected="true" data-p="pEnnuste">Ennuste</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="pPaikat">Paikat</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="pSaaliit">Saaliit</button>
+      <button class="tab" role="tab" aria-selected="false" data-p="pAineisto">Aineisto</button>
+      <span class="sp"></span>
+      <button class="toggle" id="sheetToggle" aria-expanded="true" aria-label="Pienennä paneeli">▾</button>
+    </div>
+
+    <div class="panel" id="pEnnuste" role="tabpanel">
+      <div class="seg" id="spSeg"><button data-sp="kuha" aria-pressed="true">Kuha</button><button data-sp="ahven" aria-pressed="false">Ahven</button><button data-sp="hauki" aria-pressed="false">Hauki</button><button data-sp="kirjolohi" aria-pressed="false">Kirjolohi</button></div>
+      <div class="scorehead"><div class="score" id="fcScore">–</div><div><div class="scorelbl" id="fcLabel">Haetaan säätä…</div><div class="scorewhen" id="fcWhen"></div></div></div>
+      <div class="days" id="fcDays"></div>
+      <label class="f" for="fcHour">Kellonaika <b id="fcHourTxt"></b></label>
+      <input type="range" id="fcHour" min="0" max="23" step="1">
+      <div class="row" style="margin-top:6px"><label class="muted" for="fcDate">Muu päivä</label><input type="date" id="fcDate" style="width:auto"></div>
+      <div class="row" id="stockRow" hidden style="margin-top:8px"><label class="muted" for="stockIn">Viimeisin kirjolohi-istutus</label><input type="date" id="stockIn" style="width:auto"></div>
+      <div class="notes" id="fcNotes"></div>
+      <div class="row" style="justify-content:space-between;align-items:flex-end"><h3>Olosuhteet</h3><button class="btn" id="wxRefresh">Päivitä sää</button></div>
+      <div class="wx" id="fcWx"></div>
+      <h3>Mistä arvio koostuu</h3>
+      <div id="fcFactors"></div>
+      <h3>Mihin mennä</h3>
+      <ul class="muted" id="fcWhere" style="padding-left:18px;margin:4px 0"></ul>
+      <h3>Seuraavan viikon parhaat ajat</h3>
+      <ul class="list best" id="fcBest"></ul>
+      <h3>Viikon näkymä</h3>
+      <p class="muted">Tummempi ruutu on parempi tunti. Napauta ruutua valitaksesi sen.</p>
+      <div class="heat" id="fcHeat"></div>
+      <h3>Veden lämpötila</h3>
+      <p class="muted">Jos mittasit veden lämmön, syötä se. Mitattu arvo on voimassa neljä vuorokautta.</p>
+      <div class="row"><input type="text" id="wtIn" inputmode="decimal" placeholder="esim. 12,5" style="width:120px"><button class="btn" id="wtSave">Tallenna</button><button class="btn" id="wtClear">Poista</button></div>
+      <div class="note">Arvio on suuntaa antava: veden lämpötila ja valo painavat eniten, ilmanpaineen ja kalakalenterin vaikutuksesta tutkimusnäyttö on heikkoa. Sää: Open-Meteo.</div>
+    </div>
+
+    <div class="panel" id="pPaikat" role="tabpanel" hidden>
+      <div id="editBox" hidden></div>
+      <h3>Omat kalapaikat</h3>
+      <ul class="list" id="spotList"></ul>
+      <p class="muted" id="spotEmpty">Ei vielä tallennettuja paikkoja. Sijoita alla olevat ehdotukset kartalle tai lisää oma paikka.</p>
+      <h3>Ehdotetut paikat</h3>
+      <p class="muted">Kuvakaappauksista arvioidut paikat. Sijoita ne kartalle syvyyskäyrien avulla.</p>
+      <ul class="list" id="sugList"></ul>
+    </div>
+
+    <div class="panel" id="pSaaliit" role="tabpanel" hidden>
+      <h3>Kirjaa saalis</h3>
+      <label class="f" for="cSp">Laji</label>
+      <select id="cSp"><option value="kuha">Kuha</option><option value="ahven">Ahven</option><option value="hauki">Hauki</option><option value="kirjolohi">Kirjolohi</option><option value="muu">Muu</option></select>
+      <div class="row"><div style="flex:1"><label class="f" for="cLen">Pituus (cm)</label><input type="text" id="cLen" inputmode="decimal"></div><div style="flex:1"><label class="f" for="cW">Paino (g)</label><input type="text" id="cW" inputmode="numeric"></div></div>
+      <label class="f" for="cSpot">Paikka</label><select id="cSpot"></select>
+      <label class="f" for="cTime">Aika</label><input type="datetime-local" id="cTime">
+      <label class="f" for="cLure">Viehe tai syötti</label><input type="text" id="cLure">
+      <label class="f" for="cNote">Muistiinpanot</label><textarea id="cNote"></textarea>
+      <div class="row" style="margin-top:10px"><button class="btn primary" id="cSave">Tallenna saalis</button></div>
+      <p class="muted">Saaliiseen tallentuu samalla tunnin sää, paine ja mallin arvio. Kun kirjauksia kertyy, näet, osuuko malli omiin kokemuksiisi.</p>
+      <div id="cStats" class="note" hidden></div>
+      <h3>Saaliskirja</h3>
+      <ul class="list" id="cList"></ul>
+      <p class="muted" id="cEmpty">Ei vielä kirjauksia.</p>
+      <button class="btn" id="cExport">Vie CSV-tiedostoksi</button>
+    </div>
+
+    <div class="panel" id="pAineisto" role="tabpanel" hidden>
+      <h3>Kartalla nyt</h3>
+      <ul class="list" id="layerList"></ul>
+      <p class="muted" id="layerEmpty">Ei ladattuja tasoja.</p>
+      <h3>Lisää syvyysaineisto tälle laitteelle</h3>
+      <p class="muted">Pysyvämpi tapa on ajaa repositorion tools/rajaa_syke.py ja viedä tulos data-kansioon, jolloin aineisto näkyy kaikilla laitteilla. Ohje on README-tiedostossa.</p>
+      <ul class="links muted" style="padding-left:0;margin:4px 0 10px">
+        <li><a href="https://wwwd3.ymparisto.fi/d3/gis_data/spesific/syvyysalue.zip" target="_blank" rel="noopener">Syvyysalueet (syvyysalue.zip)</a></li>
+        <li><a href="https://wwwd3.ymparisto.fi/d3/gis_data/spesific/syvyyskayra.zip" target="_blank" rel="noopener">Syvyyskäyrät (syvyyskayra.zip)</a></li>
+        <li><a href="https://wwwd3.ymparisto.fi/d3/gis_data/spesific/luotauspisteet.zip" target="_blank" rel="noopener">Luotauspisteet (luotauspisteet.zip)</a></li>
+        <li><a href="https://wwwd3.ymparisto.fi/d3/gis_data/spesific/ranta10jarvet.zip" target="_blank" rel="noopener">Järvien rantaviiva (ranta10jarvet.zip), iso</a></li>
+        <li><a href="https://wwwd3.ymparisto.fi/d3/gis_data/spesific/ranta10joet.zip" target="_blank" rel="noopener">Jokien rantaviiva (ranta10joet.zip), Kymijoen jokiosuudet</a></li>
+      </ul>
+      <div class="drop" id="drop">
+        <p style="margin:0 0 8px">Pudota tiedostot tähän tai</p>
+        <label class="btn primary" style="display:inline-block">Valitse tiedostot<input type="file" id="fileIn" multiple accept=".zip,.shp,.dbf,.cpg,.prj,.shx,.geojson,.json" hidden></label>
+        <p class="muted" style="margin:8px 0 0">Zip, shapefile (.shp + .dbf) tai GeoJSON.</p>
+      </div>
+      <div id="procStatus" class="muted" style="margin-top:8px"></div>
+      <div class="prog" id="prog" hidden><i id="progBar"></i></div>
+      <ul class="list" id="pendList"></ul>
+      <details style="margin-top:10px"><summary class="muted">Rajausalue</summary>
+        <p class="muted">ETRS-TM35FIN-koordinaatit (m): itä-min, pohjoinen-min, itä-max, pohjoinen-max.</p>
+        <div class="row"><input type="text" id="bboxIn" inputmode="numeric" style="flex:1"><button class="btn" id="bboxReset">Palauta</button></div>
+      </details>
+      <h3>Syvyysvärit</h3>
+      <div class="legend" id="legendBar2"></div><div class="lgnums" id="legendNums2"></div>
+      <div class="note">Syvyysaineisto: Suomen ympäristökeskus (Syke), CC BY 4.0. Sää: Open-Meteo.com, CC BY 4.0. Kartta ei ole navigointikartta.</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

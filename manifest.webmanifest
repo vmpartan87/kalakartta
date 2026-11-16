@@ -1,0 +1,15 @@
+{
+  "name": "Kalakartta – Iitin–Jaalan vedet",
+  "short_name": "Kalakartta",
+  "description": "Syvyyskartta, kalapaikat, saaliskirja ja kalaonni-arvio kuhalle, ahvenelle, hauelle ja kirjolohelle.",
+  "lang": "fi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EEF3F2",
+  "theme_color": "#0B6E79",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
